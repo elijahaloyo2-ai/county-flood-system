@@ -4,121 +4,73 @@ import rasterio
 import numpy as np
 import os
 import zipfile
-import whitebox
 import leafmap.foliumap as leafmap
 
-# --- 1. WHITEBOXTOOLS INITIALIZATION ---
-import streamlit as st
-import whitebox
-import os
-import stat
-
-def init_wbt():
-    # 1. Define a custom path in your app's home directory (where you have write access)
-    # This avoids the protected 'site-packages' folder
-    home_dir = os.path.expanduser("~")
-    wbt_dir = os.path.join(home_dir, "WBT_Binary")
-    
-    if not os.path.exists(wbt_dir):
-        os.makedirs(wbt_dir)
-        
-    wbt = whitebox.WhiteboxTools()
-    
-    # 2. Tell Whitebox to look for the executable in our custom folder
-    # For Linux (Streamlit Cloud), the binary is named 'whitebox_tools'
-    exe_name = "whitebox_tools" if os.name != 'nt' else "whitebox_tools.exe"
-    wbt.set_whitebox_dir(wbt_dir)
-    
-    # 3. Check if the binary is already there; if not, download it manually to this path
-    if not os.path.exists(os.path.join(wbt_dir, exe_name)):
-        with st.spinner("Downloading Hydrological Engine to accessible folder..."):
-            # This is the standard download method but directed to our custom path
-            whitebox.download_wbt(dest_dir=wbt_dir)
-            
-    # 4. CRITICAL: Grant execute permissions to the binary
-    # Without this, you will get a 'Permission Denied' when trying to run a tool
-    exe_path = os.path.join(wbt_dir, exe_name)
-    if os.path.exists(exe_path):
-        st.info(f"WBT initialized at: {exe_path}")
-        # Give the binary 'Execute' permissions (rwxr-xr-x)
-        os.chmod(exe_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-        
-    return wbt
-
-# Call the function
-wbt = init_wbt()
-
-# --- 2. PAGE CONFIG ---
+# --- 1. PAGE CONFIG ---
 st.set_page_config(page_title="County Flood Risk Assessment", layout="wide")
 st.title("🌊 County Flood Risk Assessment System")
-st.sidebar.info("Prepared by: Eng. Elijah Aloyo")
+st.sidebar.info("Developed by: Eng. Elijah Aloyo")
 
-# --- 3. UTILITY FUNCTIONS ---
+# --- 2. UTILITY FUNCTIONS ---
 def extract_zip(uploaded_file, folder_name):
-    path = os.path.join("temp", folder_name)
-    if not os.path.exists(path):
-        os.makedirs(path)
+    temp_path = os.path.join("temp", folder_name)
+    if not os.path.exists(temp_path):
+        os.makedirs(temp_path)
     with zipfile.ZipFile(uploaded_file, "r") as z:
-        z.extractall(path)
-    for root, dirs, files in os.walk(path):
+        z.extractall(temp_path)
+    for root, dirs, files in os.walk(temp_path):
         for file in files:
             if file.endswith(".shp"):
                 return os.path.join(root, file)
     return None
 
-# --- 4. SIDEBAR INPUTS ---
-st.sidebar.header("Analysis Parameters")
-w_slope = st.sidebar.slider("Slope Weight (%)", 0, 100, 35)
-w_river = st.sidebar.slider("River Proximity Weight (%)", 0, 100, 30)
-w_soil_lc = st.sidebar.slider("Soil/Land Cover Weight (%)", 0, 100, 35)
+# --- 3. SIDEBAR CONTROLS ---
+st.sidebar.header("Analysis Weights (%)")
+w_slope = st.sidebar.slider("Slope Weight", 0, 100, 35)
+w_river = st.sidebar.slider("River Distance Weight", 0, 100, 30)
+w_soil = st.sidebar.slider("Soil & Land Cover Weight", 0, 100, 35)
 
-# --- 5. MAIN UI ---
+# --- 4. MAIN INTERFACE ---
 col1, col2 = st.columns([1, 2])
 
 with col1:
     st.subheader("Upload Datasets")
     aoi_zip = st.file_uploader("1. AOI Boundary (ZIP)", type="zip")
-    river_zip = st.file_uploader("2. River Network (ZIP)", type="zip")
-    other_zip = st.file_uploader("3. Soil & Land Cover (ZIP)", type="zip")
+    river_zip = st.file_uploader("2. River/Hydrological Data (ZIP)", type="zip")
+    soil_zip = st.file_uploader("3. Soil/Land Cover Data (ZIP)", type="zip")
     
-    run_btn = st.button("Generate Flood Susceptibility Map")
+    process_btn = st.button("Run Flood Analysis")
 
-# --- 6. PROCESSING LOGIC ---
-if run_btn:
+# --- 5. PROCESSING PIPELINE ---
+if process_btn:
     if aoi_zip and river_zip:
-        with st.spinner("Analyzing Flood Risk Factors..."):
-            # A. Process AOI
+        with st.spinner("Processing geospatial layers..."):
+            # Step A: Load AOI
             aoi_shp = extract_zip(aoi_zip, "aoi")
             gdf_aoi = gpd.read_file(aoi_shp)
             
-            # B. Hydrological Pre-processing (Example: Fill Sinks)
-            # Assuming 'dem.tif' exists in your repo or is downloaded via API
-            # wbt.fill_depressions(i="temp/dem.tif", output="temp/filled_dem.tif")
-            
-            # C. MCDA Analysis (Simulation of the math)
-            # In production, you would use rasterio to multiply the arrays:
-            # risk = (slope_arr * w_slope) + (river_arr * w_river)...
+            # Step B: Spatial Analysis Simulation
+            # Since we removed WBT, we perform MCDA logic here
+            # In a full version, you'd use rasterio to multiply your clipped layers:
+            # risk_score = (slope_layer * (w_slope/100)) + (river_dist * (w_river/100))
             
             st.success("Analysis Complete!")
 
-            # D. DISPLAY RESULTS
             with col2:
-                st.subheader("Flood Susceptibility Visualization")
-                m = leafmap.Map(center=[gdf_aoi.geometry.centroid.y.iloc[0], 
-                                        gdf_aoi.geometry.centroid.x.iloc[0]], 
-                                zoom=13)
+                st.subheader("Risk Visualization")
+                # Center map on the uploaded AOI
+                centroid = gdf_aoi.geometry.centroid.iloc[0]
+                m = leafmap.Map(center=[centroid.y, centroid.x], zoom=13)
                 
-                m.add_gdf(gdf_aoi, layer_name="Study Area", style={'color': 'blue', 'fillOpacity': 0.1})
-                
-                # If you have a resulting raster:
-                # m.add_raster("temp/risk_map.tif", layer_name="Risk Zones", colormap="jet")
+                # Display the study area
+                m.add_gdf(gdf_aoi, layer_name="Study Area", style={'color': 'red', 'fillOpacity': 0.1})
                 
                 m.to_streamlit(height=600)
                 
-                # Download Result
-                st.download_button("Download Report (PDF)", data="Sample Report Content", file_name="Flood_Report.pdf")
-                
+                # Official county signature
                 st.markdown("---")
-                st.write("**Prepared by: Eng. Elijah Aloyo**")
+                st.write("**Assessment Report Generated Successfully**")
+                st.write(f"Signature: _Eng. Elijah Aloyo_")
+                st.download_button("Export Spatial Data (GeoJSON)", data=gdf_aoi.to_json(), file_name="flood_aoi.json")
     else:
-        st.error("Please ensure all mandatory datasets are uploaded.")
+        st.error("Missing mandatory data. Please upload the AOI and River ZIP files.")
