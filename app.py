@@ -8,16 +8,44 @@ import whitebox
 import leafmap.foliumap as leafmap
 
 # --- 1. WHITEBOXTOOLS INITIALIZATION ---
+import streamlit as st
+import whitebox
+import os
+import stat
+
 def init_wbt():
+    # 1. Define a custom path in your app's home directory (where you have write access)
+    # This avoids the protected 'site-packages' folder
+    home_dir = os.path.expanduser("~")
+    wbt_dir = os.path.join(home_dir, "WBT_Binary")
+    
+    if not os.path.exists(wbt_dir):
+        os.makedirs(wbt_dir)
+        
     wbt = whitebox.WhiteboxTools()
-    if not os.path.exists(wbt.exe_path):
-        with st.spinner("Downloading Hydrological Engine..."):
-            whitebox.download_wbt()
-    # Set permissions for Linux Environment
-    if os.name != 'nt': # If not Windows
-        os.chmod(wbt.exe_path, 0o755)
+    
+    # 2. Tell Whitebox to look for the executable in our custom folder
+    # For Linux (Streamlit Cloud), the binary is named 'whitebox_tools'
+    exe_name = "whitebox_tools" if os.name != 'nt' else "whitebox_tools.exe"
+    wbt.set_whitebox_dir(wbt_dir)
+    
+    # 3. Check if the binary is already there; if not, download it manually to this path
+    if not os.path.exists(os.path.join(wbt_dir, exe_name)):
+        with st.spinner("Downloading Hydrological Engine to accessible folder..."):
+            # This is the standard download method but directed to our custom path
+            whitebox.download_wbt(dest_dir=wbt_dir)
+            
+    # 4. CRITICAL: Grant execute permissions to the binary
+    # Without this, you will get a 'Permission Denied' when trying to run a tool
+    exe_path = os.path.join(wbt_dir, exe_name)
+    if os.path.exists(exe_path):
+        st.info(f"WBT initialized at: {exe_path}")
+        # Give the binary 'Execute' permissions (rwxr-xr-x)
+        os.chmod(exe_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+        
     return wbt
 
+# Call the function
 wbt = init_wbt()
 
 # --- 2. PAGE CONFIG ---
