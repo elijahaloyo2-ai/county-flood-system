@@ -2,7 +2,7 @@ streamlit
 geopandas
 rasterio
 numpy
-whiteboxtools
+whitebox
 leafmap
 streamlit-folium
 pystac-client
