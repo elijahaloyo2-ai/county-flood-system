@@ -2,8 +2,5 @@ streamlit
 geopandas
 rasterio
 numpy
-whitebox
 leafmap
 streamlit-folium
-pystac-client
-stackstac
